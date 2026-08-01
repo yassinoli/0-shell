@@ -1,3 +1,4 @@
+use sh::{Status, execute, tokenize};
 use std::io::{self, Write};
 
 fn main() {
@@ -6,22 +7,34 @@ fn main() {
 
     loop {
         print!("$ ");
-        io::stdout().flush().unwrap();
+        let _ = io::stdout().flush();
 
+        line.clear();
         match stdin.read_line(&mut line) {
             Ok(0) => {
                 println!();
                 break;
             }
             Ok(_) => {
-                let command = line.trim().split_whitespace().next().unwrap_or("");
-                if !command.is_empty() {
-                    println!("command: {}", command);
+                let trimmed = line.trim_end_matches(['\n', '\r']);
+                if trimmed.trim().is_empty() {
+                    continue;
                 }
-                line.clear();
+
+                match tokenize(trimmed) {
+                    Ok(args) => {
+                        if args.is_empty() {
+                            continue;
+                        }
+                        if execute(&args) == Status::Exit {
+                            break;
+                        }
+                    }
+                    Err(e) => eprintln!("0-shell: {}", e),
+                }
             }
             Err(error) => {
-                eprintln!("read error: {}", error);
+                eprintln!("0-shell: read error: {}", error);
                 break;
             }
         }
