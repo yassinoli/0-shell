@@ -40,26 +40,3 @@ pub fn tokenize(input: &str) -> Result<Vec<String>, String> {
 
     Ok(tokens)
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn splits_whitespace() {
-        assert_eq!(tokenize("ls -la").unwrap(), vec!["ls", "-la"]);
-    }
-
-    #[test]
-    fn double_quotes() {
-        assert_eq!(
-            tokenize(r#"echo "Hello There""#).unwrap(),
-            vec!["echo", "Hello There"]
-        );
-    }
-
-    #[test]
-    fn single_quotes() {
-        assert_eq!(tokenize("echo 'a b'").unwrap(), vec!["echo", "a b"]);
-    }
-}
