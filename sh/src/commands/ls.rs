@@ -35,23 +35,25 @@ pub fn run(args: &[String]) -> Result<Status, String> {
             paths.push(arg);
         }
     }
-
+    
     if paths.is_empty() {
         paths.push(".");
     }
-
+    
     let multiple = paths.len() > 1;
     let mut first = true;
     let mut had_error = false;
-
+    
     // Separate files and directories like traditional ls
     let mut files: Vec<PathBuf> = Vec::new();
     let mut dirs: Vec<PathBuf> = Vec::new();
-
+    
     for p in &paths {
         let path = Path::new(p);
+        // Fetch metadata without following symlinks
         match fs::symlink_metadata(path) {
             Ok(meta) => {
+                // Group actual directories separately from files and symlinks
                 if meta.is_dir() && !meta.file_type().is_symlink() {
                     dirs.push(path.to_path_buf());
                 } else {
@@ -59,21 +61,25 @@ pub fn run(args: &[String]) -> Result<Status, String> {
                 }
             }
             Err(e) => {
+            // Print access error to stderr and flag exit failure
                 eprintln!("ls: cannot access '{}': {}", p, e);
                 had_error = true;
             }
         }
     }
 
+        // Print individual files first
     if !files.is_empty() {
         if let Err(e) = list_entries(&files, &flags, false) {
             eprintln!("ls: {}", e);
             had_error = true;
         }
-        first = false;
+        first = false; // Mark that output has started
     }
 
+    // Process and display each directory
     for dir in &dirs {
+      // Print directory headers (e.g. "folder:") and blank separator lines
         if !first || multiple {
             if !first {
                 println!();
@@ -82,6 +88,7 @@ pub fn run(args: &[String]) -> Result<Status, String> {
         }
         first = false;
 
+        // List directory contents
         match list_directory(dir, &flags) {
             Ok(()) => {}
             Err(e) => {
@@ -91,7 +98,7 @@ pub fn run(args: &[String]) -> Result<Status, String> {
         }
     }
 
-    let _ = had_error;
+    let _ = had_error;// Silence unused variable compiler warning
     Ok(Status::Continue)
 }
 
