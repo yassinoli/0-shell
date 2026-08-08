@@ -101,33 +101,40 @@ pub fn run(args: &[String]) -> Result<Status, String> {
     let _ = had_error;// Silence unused variable compiler warning
     Ok(Status::Continue)
 }
-
+// Collect, filter, and display the contents of a directory
 fn list_directory(dir: &Path, flags: &Flags) -> io::Result<()> {
     let mut entries: Vec<(String, PathBuf)> = Vec::new();
 
+    // Include '.' and '..' if -a / --all flag is active
     if flags.all {
         entries.push((".".to_string(), dir.to_path_buf()));
         entries.push(("..".to_string(), dir.join("..")));
     }
 
+    // Read items inside the directory
     for entry in fs::read_dir(dir)? {
         let entry = entry?;
         let name = entry.file_name().to_string_lossy().into_owned();
+        // Skip hidden files (starting with '.') unless -a is active
         if !flags.all && name.starts_with('.') {
             continue;
         }
         entries.push((name, entry.path()));
     }
 
+    // Sort items alphabetically by filename
     entries.sort_by(|a, b| a.0.cmp(&b.0));
 
+    // Separate sorted tuples into parallel name and path vectors
     let paths: Vec<PathBuf> = entries.iter().map(|(_, p)| p.clone()).collect();
     let names: Vec<String> = entries.iter().map(|(n, _)| n.clone()).collect();
 
     list_named_entries(&names, &paths, flags)
 }
 
+// Prepare explicit file paths for output
 fn list_entries(paths: &[PathBuf], flags: &Flags, _is_dir: bool) -> io::Result<()> {
+    // Extract display names from file paths
     let names: Vec<String> = paths
         .iter()
         .map(|p| {
@@ -139,6 +146,7 @@ fn list_entries(paths: &[PathBuf], flags: &Flags, _is_dir: bool) -> io::Result<(
     list_named_entries(&names, paths, flags)
 }
 
+// Print entries using either detailed (-l) or standard layout
 fn list_named_entries(names: &[String], paths: &[PathBuf], flags: &Flags) -> io::Result<()> {
     if flags.long {
         print_long(names, paths, flags)?;
