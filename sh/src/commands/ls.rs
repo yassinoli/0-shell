@@ -15,304 +15,383 @@ struct Flags {
 }
 
 pub fn run(args: &[String]) -> Result<Status, String> {
+    let (flags, paths) = parse_args(args)?;
+
+    let paths = if paths.is_empty() {
+        vec![PathBuf::from(".")]
+    } else {
+        paths
+            .into_iter()
+            .map(PathBuf::from)
+            .collect::<Vec<_>>()
+    };
+
+    let mut files = Vec::new();
+    let mut directories = Vec::new();
+
+    for path in paths {
+        match fs::symlink_metadata(&path) {
+            Ok(metadata) => {
+                if metadata.is_dir() && !metadata.file_type().is_symlink() {
+                    directories.push(path);
+                } else {
+                    files.push(path);
+                }
+            }
+
+            Err(error) => {
+                eprintln!(
+                    "ls: cannot access '{}': {}",
+                    path.display(),
+                    error
+                );
+            }
+        }
+    }
+
+    let multiple = files.len() + directories.len() > 1;
+    let mut printed_something = false;
+
+    if !files.is_empty() {
+        display_entries(&files, &flags)?;
+
+        printed_something = true;
+    }
+
+    for directory in directories {
+        if printed_something {
+            println!();
+        }
+
+        if multiple {
+            println!("{}:", directory.display());
+        }
+
+        display_directory(&directory, &flags)?;
+        printed_something = true;
+    }
+
+    Ok(Status::Continue)
+}
+
+fn parse_args(args: &[String]) -> Result<(Flags, Vec<String>), String> {
     let mut flags = Flags::default();
-    let mut paths: Vec<&str> = Vec::new();
+    let mut paths = Vec::new();
 
     for arg in args {
         if arg == "--" {
             continue;
         }
-        if arg.starts_with('-') && arg.len() > 1 && arg != "-" {
-            for c in arg.chars().skip(1) {
-                match c {
+
+        if arg.starts_with('-') && arg.len() > 1 {
+            for flag in arg.chars().skip(1) {
+                match flag {
                     'l' => flags.long = true,
                     'a' => flags.all = true,
                     'F' => flags.classify = true,
-                    _ => return Err(format!("ls: invalid option -- '{}'", c)),
+
+                    _ => {
+                        return Err(format!(
+                            "ls: invalid option -- '{}'",
+                            flag
+                        ));
+                    }
                 }
             }
         } else {
-            paths.push(arg);
-        }
-    }
-    
-    if paths.is_empty() {
-        paths.push(".");
-    }
-    
-    let multiple = paths.len() > 1;
-    let mut first = true;
-    let mut had_error = false;
-    
-    // Separate files and directories like traditional ls
-    let mut files: Vec<PathBuf> = Vec::new();
-    let mut dirs: Vec<PathBuf> = Vec::new();
-    
-    for p in &paths {
-        let path = Path::new(p);
-        // Fetch metadata without following symlinks
-        match fs::symlink_metadata(path) {
-            Ok(meta) => {
-                // Group actual directories separately from files and symlinks
-                if meta.is_dir() && !meta.file_type().is_symlink() {
-                    dirs.push(path.to_path_buf());
-                } else {
-                    files.push(path.to_path_buf());
-                }
-            }
-            Err(e) => {
-            // Print access error to stderr and flag exit failure
-                eprintln!("ls: cannot access '{}': {}", p, e);
-                had_error = true;
-            }
+            paths.push(arg.clone());
         }
     }
 
-        // Print individual files first
-    if !files.is_empty() {
-        if let Err(e) = list_entries(&files, &flags, false) {
-            eprintln!("ls: {}", e);
-            had_error = true;
-        }
-        first = false; // Mark that output has started
-    }
-
-    // Process and display each directory
-    for dir in &dirs {
-      // Print directory headers (e.g. "folder:") and blank separator lines
-        if !first || multiple {
-            if !first {
-                println!();
-            }
-            println!("{}:", dir.display());
-        }
-        first = false;
-
-        // List directory contents
-        match list_directory(dir, &flags) {
-            Ok(()) => {}
-            Err(e) => {
-                eprintln!("ls: cannot open directory '{}': {}", dir.display(), e);
-                had_error = true;
-            }
-        }
-    }
-
-    let _ = had_error;// Silence unused variable compiler warning
-    Ok(Status::Continue)
+    Ok((flags, paths))
 }
-// Collect, filter, and display the contents of a directory
-fn list_directory(dir: &Path, flags: &Flags) -> io::Result<()> {
-    let mut entries: Vec<(String, PathBuf)> = Vec::new();
 
-    // Include '.' and '..' if -a / --all flag is active
+fn display_directory(
+    directory: &Path,
+    flags: &Flags,
+) -> io::Result<()> {
+    let mut entries = collect_entries(directory, flags)?;
+
+    entries.sort_by(|a, b| a.0.cmp(&b.0));
+
+    let names: Vec<String> = entries
+        .iter()
+        .map(|entry| entry.0.clone())
+        .collect();
+
+    let paths: Vec<PathBuf> = entries
+        .iter()
+        .map(|entry| entry.1.clone())
+        .collect();
+
+    display_entries_with_names(&names, &paths, flags)
+}
+
+fn collect_entries(
+    directory: &Path,
+    flags: &Flags,
+) -> io::Result<Vec<(String, PathBuf)>> {
+    let mut result = Vec::new();
+
     if flags.all {
-        entries.push((".".to_string(), dir.to_path_buf()));
-        entries.push(("..".to_string(), dir.join("..")));
+        result.push((".".to_string(), directory.to_path_buf()));
+        result.push(("..".to_string(), directory.join("..")));
     }
 
-    // Read items inside the directory
-    for entry in fs::read_dir(dir)? {
-        let entry = entry?;
-        let name = entry.file_name().to_string_lossy().into_owned();
-        // Skip hidden files (starting with '.') unless -a is active
+    for item in fs::read_dir(directory)? {
+        let item = item?;
+        let name = item.file_name().to_string_lossy().to_string();
+
         if !flags.all && name.starts_with('.') {
             continue;
         }
-        entries.push((name, entry.path()));
+
+        result.push((name, item.path()));
     }
 
-    // Sort items alphabetically by filename
-    entries.sort_by(|a, b| a.0.cmp(&b.0));
-
-    // Separate sorted tuples into parallel name and path vectors
-    let paths: Vec<PathBuf> = entries.iter().map(|(_, p)| p.clone()).collect();
-    let names: Vec<String> = entries.iter().map(|(n, _)| n.clone()).collect();
-
-    list_named_entries(&names, &paths, flags)
+    Ok(result)
 }
 
-// Prepare explicit file paths for output
-fn list_entries(paths: &[PathBuf], flags: &Flags, _is_dir: bool) -> io::Result<()> {
-    // Extract display names from file paths
+fn display_entries(
+    paths: &[PathBuf],
+    flags: &Flags,
+) -> io::Result<()> {
     let names: Vec<String> = paths
         .iter()
-        .map(|p| {
-            p.file_name()
-                .map(|n| n.to_string_lossy().into_owned())
-                .unwrap_or_else(|| p.display().to_string())
+        .map(|path| {
+            path.file_name()
+                .map(|name| name.to_string_lossy().to_string())
+                .unwrap_or_else(|| path.display().to_string())
         })
         .collect();
-    list_named_entries(&names, paths, flags)
+
+    display_entries_with_names(&names, paths, flags)
 }
 
-// Print entries using either detailed (-l) or standard layout
-fn list_named_entries(names: &[String], paths: &[PathBuf], flags: &Flags) -> io::Result<()> {
+fn display_entries_with_names(
+    names: &[String],
+    paths: &[PathBuf],
+    flags: &Flags,
+) -> io::Result<()> {
     if flags.long {
-        print_long(names, paths, flags)?;
+        print_long_format(names, paths, flags)
     } else {
-        print_short(names, paths, flags)?;
+        print_short_format(names, paths, flags)
     }
-    Ok(())
 }
 
-fn print_short(names: &[String], paths: &[PathBuf], flags: &Flags) -> io::Result<()> {
+fn print_short_format(
+    names: &[String],
+    paths: &[PathBuf],
+    flags: &Flags,
+) -> io::Result<()> {
     let stdout = io::stdout();
-    let mut out = stdout.lock();
-    for (i, name) in names.iter().enumerate() {
-        let display = if flags.classify {
-            classify_name(name, &paths[i])
+    let mut output = stdout.lock();
+
+    for (index, name) in names.iter().enumerate() {
+        let value = if flags.classify {
+            classify(name, &paths[index])
         } else {
             name.clone()
         };
-        writeln!(out, "{}", display)?;
+
+        writeln!(output, "{}", value)?;
     }
+
     Ok(())
 }
 
-fn print_long(names: &[String], paths: &[PathBuf], flags: &Flags) -> io::Result<()> {
-    let mut metas: Vec<Option<Metadata>> = Vec::with_capacity(paths.len());
-    let mut total_blocks: u64 = 0;
+fn print_long_format(
+    names: &[String],
+    paths: &[PathBuf],
+    flags: &Flags,
+) -> io::Result<()> {
+    let mut rows = Vec::new();
+    let mut total_blocks = 0;
 
-    for path in paths {
-        match fs::symlink_metadata(path) {
-            Ok(m) => {
-                // st_blocks is in 512-byte units on Linux
-                total_blocks += m.blocks();
-                metas.push(Some(m));
-            }
-            Err(_) => metas.push(None),
-        }
+    for (name, path) in names.iter().zip(paths.iter()) {
+        let metadata = match fs::symlink_metadata(path) {
+            Ok(metadata) => metadata,
+            Err(_) => continue,
+        };
+
+        total_blocks += metadata.blocks();
+
+        rows.push(make_row(
+            name,
+            path,
+            &metadata,
+            flags,
+        ));
     }
 
     println!("total {}", total_blocks);
 
-    let mut link_w = 1usize;
-    let mut user_w = 1usize;
-    let mut group_w = 1usize;
-    let mut size_w = 1usize;
+    let link_width = rows
+        .iter()
+        .map(|row| row.links.len())
+        .max()
+        .unwrap_or(1);
 
-    let mut rows: Vec<Option<LongRow>> = Vec::with_capacity(paths.len());
+    let user_width = rows
+        .iter()
+        .map(|row| row.user.len())
+        .max()
+        .unwrap_or(1);
 
-    for (i, path) in paths.iter().enumerate() {
-        let Some(ref meta) = metas[i] else {
-            rows.push(None);
-            continue;
-        };
-        let row = build_long_row(&names[i], path, meta, flags);
-        link_w = link_w.max(row.nlink_str.len());
-        user_w = user_w.max(row.user.len());
-        group_w = group_w.max(row.group.len());
-        size_w = size_w.max(row.size_str.len());
-        rows.push(Some(row));
-    }
+    let group_width = rows
+        .iter()
+        .map(|row| row.group.len())
+        .max()
+        .unwrap_or(1);
+
+    let size_width = rows
+        .iter()
+        .map(|row| row.size.len())
+        .max()
+        .unwrap_or(1);
 
     let stdout = io::stdout();
-    let mut out = stdout.lock();
+    let mut output = stdout.lock();
 
-    for row in rows.into_iter().flatten() {
+    for row in rows {
         writeln!(
-            out,
-            "{} {:>link_w$} {:user_w$} {:group_w$} {:>size_w$} {} {}",
+            output,
+            "{} {:>link_width$} {:user_width$} {:group_width$} {:>size_width$} {} {}",
             row.mode,
-            row.nlink_str,
+            row.links,
             row.user,
             row.group,
-            row.size_str,
-            row.mtime,
+            row.size,
+            row.date,
             row.name,
-            link_w = link_w,
-            user_w = user_w,
-            group_w = group_w,
-            size_w = size_w,
+            link_width = link_width,
+            user_width = user_width,
+            group_width = group_width,
+            size_width = size_width,
         )?;
     }
 
     Ok(())
 }
 
-struct LongRow {
+struct Row {
     mode: String,
-    nlink_str: String,
+    links: String,
     user: String,
     group: String,
-    size_str: String,
-    mtime: String,
+    size: String,
+    date: String,
     name: String,
 }
 
-fn build_long_row(name: &str, path: &Path, meta: &Metadata, flags: &Flags) -> LongRow {
-    let mode = format_mode(meta);
-    let nlink_str = meta.nlink().to_string();
-    let user = resolve_user(meta.uid());
-    let group = resolve_group(meta.gid());
-    let size_str = format_size(meta);
-    let mtime = format_mtime(meta);
+fn make_row(
+    name: &str,
+    path: &Path,
+    metadata: &Metadata,
+    flags: &Flags,
+) -> Row {
     let display_name = if flags.classify {
-        classify_name(name, path)
+        classify(name, path)
     } else {
         name.to_string()
     };
 
-    // Symlink target
-    let name = if meta.file_type().is_symlink() {
+    let name = if metadata.file_type().is_symlink() {
         match fs::read_link(path) {
-            Ok(target) => format!("{} -> {}", display_name.trim_end_matches('@'), target.display()),
+            Ok(target) => {
+                format!(
+                    "{} -> {}",
+                    display_name.trim_end_matches('@'),
+                    target.display()
+                )
+            }
+
             Err(_) => display_name,
         }
     } else {
         display_name
     };
 
-    LongRow {
-        mode,
-        nlink_str,
-        user,
-        group,
-        size_str,
-        mtime,
+    Row {
+        mode: permissions_string(metadata),
+        links: metadata.nlink().to_string(),
+        user: get_user(metadata.uid()),
+        group: get_group(metadata.gid()),
+        size: file_size(metadata),
+        date: modified_time(metadata),
         name,
     }
 }
 
-fn format_mode(meta: &Metadata) -> String {
-    let ft = meta.file_type();
-    let mut s = String::with_capacity(10);
+fn permissions_string(metadata: &Metadata) -> String {
+    let file_type = metadata.file_type();
+    let mode = metadata.permissions().mode();
 
-    s.push(if ft.is_dir() {
+    let first = if file_type.is_dir() {
         'd'
-    } else if ft.is_symlink() {
+    } else if file_type.is_symlink() {
         'l'
-    } else if ft.is_char_device() {
+    } else if file_type.is_char_device() {
         'c'
-    } else if ft.is_block_device() {
+    } else if file_type.is_block_device() {
         'b'
-    } else if ft.is_fifo() {
+    } else if file_type.is_fifo() {
         'p'
-    } else if ft.is_socket() {
+    } else if file_type.is_socket() {
         's'
     } else {
         '-'
-    });
+    };
 
-    let mode = meta.permissions().mode();
-    s.push(if mode & 0o400 != 0 { 'r' } else { '-' });
-    s.push(if mode & 0o200 != 0 { 'w' } else { '-' });
-    s.push(special_exec(mode, 0o100, 0o4000, 's', 'S'));
-    s.push(if mode & 0o040 != 0 { 'r' } else { '-' });
-    s.push(if mode & 0o020 != 0 { 'w' } else { '-' });
-    s.push(special_exec(mode, 0o010, 0o2000, 's', 'S'));
-    s.push(if mode & 0o004 != 0 { 'r' } else { '-' });
-    s.push(if mode & 0o002 != 0 { 'w' } else { '-' });
-    s.push(special_exec(mode, 0o001, 0o1000, 't', 'T'));
+    let mut result = String::new();
 
-    s
+    result.push(first);
+
+    result.push(if mode & 0o400 != 0 { 'r' } else { '-' });
+    result.push(if mode & 0o200 != 0 { 'w' } else { '-' });
+    result.push(permission_char(
+        mode,
+        0o100,
+        0o4000,
+        's',
+        'S',
+    ));
+
+    result.push(if mode & 0o040 != 0 { 'r' } else { '-' });
+    result.push(if mode & 0o020 != 0 { 'w' } else { '-' });
+    result.push(permission_char(
+        mode,
+        0o010,
+        0o2000,
+        's',
+        'S',
+    ));
+
+    result.push(if mode & 0o004 != 0 { 'r' } else { '-' });
+    result.push(if mode & 0o002 != 0 { 'w' } else { '-' });
+    result.push(permission_char(
+        mode,
+        0o001,
+        0o1000,
+        't',
+        'T',
+    ));
+
+    result
 }
 
-fn special_exec(mode: u32, exec_bit: u32, special_bit: u32, lower: char, upper: char) -> char {
-    let exec = mode & exec_bit != 0;
-    let special = mode & special_bit != 0;
-    match (exec, special) {
+fn permission_char(
+    mode: u32,
+    execute: u32,
+    special: u32,
+    lower: char,
+    upper: char,
+) -> char {
+    let can_execute = mode & execute != 0;
+    let has_special = mode & special != 0;
+
+    match (can_execute, has_special) {
         (true, true) => lower,
         (false, true) => upper,
         (true, false) => 'x',
@@ -320,120 +399,225 @@ fn special_exec(mode: u32, exec_bit: u32, special_bit: u32, lower: char, upper: 
     }
 }
 
-fn format_size(meta: &Metadata) -> String {
-    let ft = meta.file_type();
-    if ft.is_char_device() || ft.is_block_device() {
-        let rdev = meta.rdev();
-        let major = (rdev >> 8) & 0xfff;
-        let minor = (rdev & 0xff) | ((rdev >> 12) & 0xfff00);
+fn file_size(metadata: &Metadata) -> String {
+    let file_type = metadata.file_type();
+
+    if file_type.is_char_device() || file_type.is_block_device() {
+        let device = metadata.rdev();
+
+        let major = (device >> 8) & 0xfff;
+        let minor =
+            (device & 0xff) |
+            ((device >> 12) & 0xfff00);
+
         format!("{}, {}", major, minor)
     } else {
-        meta.len().to_string()
+        metadata.len().to_string()
     }
 }
 
-fn format_mtime(meta: &Metadata) -> String {
-    let modified = meta.modified().unwrap_or(UNIX_EPOCH);
-    let duration = modified
+fn modified_time(metadata: &Metadata) -> String {
+    let time = metadata
+        .modified()
+        .unwrap_or(UNIX_EPOCH);
+
+    let timestamp = time
         .duration_since(UNIX_EPOCH)
         .unwrap_or_default()
         .as_secs() as i64;
 
-    // Format like: "Feb  5 09:21" or "Feb  5  2024" if older than ~6 months
     let now = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .unwrap_or_default()
         .as_secs() as i64;
 
-    let (_sec, min, hour, day, mon, year) = civil_from_days(duration);
+    let (_, minute, hour, day, month, year) =
+        unix_to_date(timestamp);
 
     const MONTHS: [&str; 12] = [
-        "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
+        "Jan", "Feb", "Mar", "Apr",
+        "May", "Jun", "Jul", "Aug",
+        "Sep", "Oct", "Nov", "Dec",
     ];
-    let mon_str = MONTHS.get((mon - 1) as usize).unwrap_or(&"???");
 
-    let six_months: i64 = 15778476; // ~6 months in seconds
-    if (now - duration).abs() > six_months {
-        format!("{} {:2}  {:4}", mon_str, day, year)
+    let month_name = MONTHS
+        .get((month - 1) as usize)
+        .unwrap_or(&"???");
+
+    const SIX_MONTHS: i64 = 15778476;
+
+    if (now - timestamp).abs() > SIX_MONTHS {
+        format!(
+            "{} {:2}  {:4}",
+            month_name,
+            day,
+            year
+        )
     } else {
-        format!("{} {:2} {:02}:{:02}", mon_str, day, hour, min)
+        format!(
+            "{} {:2} {:02}:{:02}",
+            month_name,
+            day,
+            hour,
+            minute
+        )
     }
 }
 
-/// Convert Unix timestamp to calendar date (UTC). Good enough for ls display.
-fn civil_from_days(timestamp: i64) -> (u32, u32, u32, i32, i32, i32) {
+fn unix_to_date(timestamp: i64) -> (u32, u32, u32, i32, i32, i32) {
     let days = timestamp.div_euclid(86400);
-    let tod = timestamp.rem_euclid(86400) as u32;
-    let hour = tod / 3600;
-    let min = (tod % 3600) / 60;
-    let sec = tod % 60;
+    let seconds = timestamp.rem_euclid(86400) as u32;
 
-    // Algorithm from http://howardhinnant.github.io/date_algorithms.html
+    let hour = seconds / 3600;
+    let minute = (seconds % 3600) / 60;
+    let second = seconds % 60;
+
     let z = days + 719468;
-    let era = if z >= 0 { z } else { z - 146096 } / 146097;
-    let doe = (z - era * 146097) as u64;
-    let yoe = (doe - doe / 1460 + doe / 36524 - doe / 146096) / 365;
-    let y = yoe as i64 + era * 400;
-    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
-    let mp = (5 * doy + 2) / 153;
-    let d = doy - (153 * mp + 2) / 5 + 1;
-    let m = if mp < 10 { mp + 3 } else { mp - 9 };
-    let y = if m <= 2 { y + 1 } else { y };
 
-    (sec, min, hour, d as i32, m as i32, y as i32)
+    let era = if z >= 0 {
+        z
+    } else {
+        z - 146096
+    } / 146097;
+
+    let day_of_era =
+        (z - era * 146097) as u64;
+
+    let year_of_era =
+        (day_of_era
+            - day_of_era / 1460
+            + day_of_era / 36524
+            - day_of_era / 146096)
+            / 365;
+
+    let year =
+        year_of_era as i64 + era * 400;
+
+    let day_of_year =
+        day_of_era
+            - (365 * year_of_era
+                + year_of_era / 4
+                - year_of_era / 100);
+
+    let month_part =
+        (5 * day_of_year + 2) / 153;
+
+    let day =
+        day_of_year
+            - (153 * month_part + 2) / 5
+            + 1;
+
+    let month =
+        if month_part < 10 {
+            month_part + 3
+        } else {
+            month_part - 9
+        };
+
+    let year =
+        if month <= 2 {
+            year + 1
+        } else {
+            year
+        };
+
+    (
+        second,
+        minute,
+        hour,
+        day as i32,
+        month as i32,
+        year as i32,
+    )
 }
 
-fn classify_name(name: &str, path: &Path) -> String {
-    let meta = match fs::symlink_metadata(path) {
-        Ok(m) => m,
+fn classify(name: &str, path: &Path) -> String {
+    let metadata = match fs::symlink_metadata(path) {
+        Ok(metadata) => metadata,
         Err(_) => return name.to_string(),
     };
-    let ft = meta.file_type();
-    if ft.is_symlink() {
+
+    let file_type = metadata.file_type();
+
+    if file_type.is_symlink() {
         format!("{}@", name)
-    } else if ft.is_dir() {
+    } else if file_type.is_dir() {
         format!("{}/", name)
-    } else if ft.is_fifo() {
+    } else if file_type.is_fifo() {
         format!("{}|", name)
-    } else if ft.is_socket() {
+    } else if file_type.is_socket() {
         format!("{}=", name)
-    } else if meta.permissions().mode() & 0o111 != 0 {
+    } else if metadata.permissions().mode() & 0o111 != 0 {
         format!("{}*", name)
     } else {
         name.to_string()
     }
 }
 
-fn resolve_user(uid: u32) -> String {
-    users().get(&uid).cloned().unwrap_or_else(|| uid.to_string())
+fn get_user(uid: u32) -> String {
+    user_map()
+        .get(&uid)
+        .cloned()
+        .unwrap_or_else(|| uid.to_string())
 }
 
-fn resolve_group(gid: u32) -> String {
-    groups().get(&gid).cloned().unwrap_or_else(|| gid.to_string())
+fn get_group(gid: u32) -> String {
+    group_map()
+        .get(&gid)
+        .cloned()
+        .unwrap_or_else(|| gid.to_string())
 }
 
-fn users() -> &'static HashMap<u32, String> {
-    static USERS: OnceLock<HashMap<u32, String>> = OnceLock::new();
-    USERS.get_or_init(|| parse_id_file("/etc/passwd", 0, 2))
+fn user_map() -> &'static HashMap<u32, String> {
+    static USERS: OnceLock<HashMap<u32, String>> =
+        OnceLock::new();
+
+    USERS.get_or_init(|| {
+        read_id_file("/etc/passwd", 0, 2)
+    })
 }
 
-fn groups() -> &'static HashMap<u32, String> {
-    static GROUPS: OnceLock<HashMap<u32, String>> = OnceLock::new();
-    GROUPS.get_or_init(|| parse_id_file("/etc/group", 0, 2))
+fn group_map() -> &'static HashMap<u32, String> {
+    static GROUPS: OnceLock<HashMap<u32, String>> =
+        OnceLock::new();
+
+    GROUPS.get_or_init(|| {
+        read_id_file("/etc/group", 0, 2)
+    })
 }
 
-fn parse_id_file(path: &str, name_idx: usize, id_idx: usize) -> HashMap<u32, String> {
-    let mut map = HashMap::new();
-    let Ok(content) = fs::read_to_string(path) else {
-        return map;
+fn read_id_file(
+    filename: &str,
+    name_index: usize,
+    id_index: usize,
+) -> HashMap<u32, String> {
+    let mut result = HashMap::new();
+
+    let content = match fs::read_to_string(filename) {
+        Ok(content) => content,
+        Err(_) => return result,
     };
+
     for line in content.lines() {
-        let parts: Vec<&str> = line.split(':').collect();
-        if parts.len() > id_idx.max(name_idx)
-            && let Ok(id) = parts[id_idx].parse::<u32>()
-        {
-            map.insert(id, parts[name_idx].to_string());
+        let fields: Vec<&str> =
+            line.split(':').collect();
+
+        let max_index = name_index.max(id_index);
+
+        if fields.len() <= max_index {
+            continue;
         }
+
+        let id = match fields[id_index].parse::<u32>() {
+            Ok(id) => id,
+            Err(_) => continue,
+        };
+
+        result.insert(
+            id,
+            fields[name_index].to_string(),
+        );
     }
-    map
+
+    result
 }
