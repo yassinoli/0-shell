@@ -1,6 +1,6 @@
 use crate::commands::Status;
 use std::fs::File;
-use std::io::{self, Read, Write};
+use std::io::{self, Read, Write , BufRead};
 use std::path::Path;
 
 /// Executes a `cat`-like command that processes a list of file paths or standard input (`"-"`)
@@ -15,7 +15,17 @@ use std::path::Path;
 pub fn run(args: &[String]) -> Result<Status, String> {
     // Validate that at least one file or stream target is provided
     if args.is_empty() {
-        return Err("cat: missing operand".to_string());
+      let stdin = io::stdin();
+        for line in stdin.lock().lines() {
+            match line {
+                Ok(line) => println!("{}", line),
+                Err(err) => {
+                    eprintln!("cat: {}", err);
+                    break;
+                }
+            }
+        }
+          return Err("cat: missing operand".to_string());
     }
 
     // Lock standard output once to optimize writing performance across multiple files/streams
