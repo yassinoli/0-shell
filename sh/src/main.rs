@@ -1,9 +1,11 @@
 use sh::{Status, execute, tokenize};
 use std::io::{self, Write};
+use std::process;
 
 fn main() {
     let stdin = io::stdin();
     let mut line = String::new();
+    let mut exit_code = 0;
 
     loop {
         print!("$ ");
@@ -26,8 +28,12 @@ fn main() {
                         if args.is_empty() {
                             continue;
                         }
-                        if execute(&args) == Status::Exit {
-                            break;
+                        match execute(&args) {
+                            Status::Continue => {}
+                            Status::Exit(code) => {
+                                exit_code = code;
+                                break;
+                            }
                         }
                     }
                     Err(e) => eprintln!("0-shell: {}", e),
@@ -39,4 +45,6 @@ fn main() {
             }
         }
     }
+
+    process::exit(exit_code);
 }

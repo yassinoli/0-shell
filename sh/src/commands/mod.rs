@@ -12,7 +12,7 @@ pub mod rm;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Status {
     Continue,
-    Exit,
+    Exit(i32),
 }
 
 pub fn execute(args: &[String]) -> Status {
