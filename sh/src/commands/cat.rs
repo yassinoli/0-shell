@@ -25,6 +25,7 @@ pub fn run(args: &[String]) -> Result<Status, String> {
                 }
             }
         }
+        // sssssssssssssssss
           return Err("cat: missing operand".to_string());
     }
 
@@ -78,7 +79,7 @@ pub fn run(args: &[String]) -> Result<Status, String> {
 
     // Log errors were handled via stderr during loop iteration, preserving shell loop execution
     if had_error {
-        // Keep shell alive; errors already printed.
+         eprintln!("cat: one or more errors occurred");
     }
 
     Ok(Status::Continue)
