@@ -1,14 +1,19 @@
-use sh::{Status, execute, tokenize};
+use sh::{execute, tokenize, Status, TokenizeState};
 use std::io::{self, Write};
 use std::process;
 
 fn main() {
     let stdin = io::stdin();
     let mut line = String::new();
+    let mut buffer = String::new();
     let mut exit_code = 0;
 
     loop {
-        print!("$ ");
+        if buffer.is_empty() {
+            print!("$ ");
+        } else {
+            print!("> ");
+        }
         let _ = io::stdout().flush();
 
         line.clear();
@@ -18,16 +23,21 @@ fn main() {
                 break;
             }
             Ok(_) => {
-                let trimmed = line.trim_end_matches(['\n', '\r']);
-                if trimmed.trim().is_empty() {
+                if buffer.is_empty() && line.trim().is_empty() {
                     continue;
                 }
 
-                match tokenize(trimmed) {
-                    Ok(args) => {
+                buffer.push_str(&line);
+
+                match tokenize(&buffer) {
+                    TokenizeState::Incomplete => continue,
+                    TokenizeState::Complete(args) => {
+                        buffer.clear();
+
                         if args.is_empty() {
                             continue;
                         }
+
                         match execute(&args) {
                             Status::Continue => {}
                             Status::Exit(code) => {
@@ -36,7 +46,6 @@ fn main() {
                             }
                         }
                     }
-                    Err(e) => eprintln!("0-shell: {}", e),
                 }
             }
             Err(error) => {

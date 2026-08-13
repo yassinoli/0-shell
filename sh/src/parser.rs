@@ -1,5 +1,10 @@
 /// Simple shell tokenizer supporting single and double quotes.
-pub fn tokenize(input: &str) -> Result<Vec<String>, String> {
+pub enum TokenizeState {
+    Complete(Vec<String>),
+    Incomplete,
+}
+
+pub fn tokenize(input: &str) -> TokenizeState {
     let mut tokens = Vec::new();
     let mut current = String::new();
     let mut chars = input.chars().peekable();
@@ -31,12 +36,12 @@ pub fn tokenize(input: &str) -> Result<Vec<String>, String> {
     }
 
     if in_single || in_double {
-        return Err("unclosed quote".to_string());
+        return TokenizeState::Incomplete;
     }
 
     if !current.is_empty() {
         tokens.push(current);
     }
 
-    Ok(tokens)
+    TokenizeState::Complete(tokens)
 }
