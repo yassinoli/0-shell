@@ -491,27 +491,6 @@ exit
 
 Also test invalid inputs and missing files/directories.
 
----
-
-## 📚 Resources
-
-* [Rust Documentation](https://doc.rust-lang.org/std/)
-* [Rust `std::fs`](https://doc.rust-lang.org/std/fs/)
-* [Rust `std::process`](https://doc.rust-lang.org/std/process/)
-* [Linux Man Pages](https://man7.org/linux/man-pages/)
-* [Unix Shell - Wikipedia](https://en.wikipedia.org/wiki/Unix_shell)
-* [BusyBox](https://busybox.net/)
-
-Useful manual pages include:
-
-```bash
-man 2 open
-man 2 execve
-man 2 stat
-man 2 mkdir
-man 2 unlink
-man 2 rename
-```
 
 ---
 
