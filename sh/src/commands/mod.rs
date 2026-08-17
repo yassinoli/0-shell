@@ -11,7 +11,7 @@ pub mod rm;
 use std::env;
 
 pub fn expand_tilde(path: &str) -> String {
-    if path == "~" {
+    if path == "~" ||  path == "$HOME"  {
         return env::var("HOME").unwrap_or_else(|_| "/".to_string());
     }
 

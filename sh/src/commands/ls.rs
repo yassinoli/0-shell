@@ -281,24 +281,24 @@ fn build_long_row(name: &str, path: &Path, meta: &Metadata, flags: &Flags) -> Lo
     let size_str = format_size(meta);           // Get the file size. - For normal files: size in bytes. -For devices: major, minor numbers.
     let mtime = format_mtime(meta);             // Get the modification date/time.
 
-    // Prepare the name that will be displayed.
-    // If -F is enabled, add a special character -  directory -> / executable -> * /  symlink -> @
-    let display_name = if flags.classify {   
-        classify_name(name, path)
-    } else {
-        name.to_string()
-    };
-
-     // show where the link points.
     let name = if meta.file_type().is_symlink() {
         match fs::read_link(path) {
-              // trim_end_matches('@') removes the '@' added by -F
-            Ok(target) => format!("{} -> {}", display_name.trim_end_matches('@'), target.display()),
-            Err(_) => display_name,
+            Ok(target) => {
+                let target_name = if flags.classify {
+                    classify_target(&target, path)
+                } else {
+                    target.display().to_string()
+                };
+                format!("{} -> {}", name, target_name)
+            }
+            Err(_) => name.to_string(),
         }
     } else {
-        // Normal file/directory
-        display_name
+        if flags.classify {
+            classify_name(name, path)
+        } else {
+            name.to_string()
+        }
     };
 
     // Put all the collected information into one LongRow.
@@ -447,8 +447,20 @@ fn classify_name(name: &str, path: &Path) -> String {
         Ok(m) => m,
         Err(_) => return name.to_string(),
     };
+    classify_display(name, &meta, true)
+}
+
+fn classify_target(target: &Path, link_path: &Path) -> String {
+    let meta = match fs::metadata(link_path) {
+        Ok(m) => m,
+        Err(_) => return target.display().to_string(),
+    };
+    classify_display(&target.display().to_string(), &meta, false)
+}
+
+fn classify_display(name: &str, meta: &Metadata, include_symlink_marker: bool) -> String {
     let ft = meta.file_type();
-    if ft.is_symlink() {
+    if include_symlink_marker && ft.is_symlink() {
         format!("{}@", name)
     } else if ft.is_dir() {
         format!("{}/", name)

@@ -368,6 +368,8 @@ fifo|
 socket=
 ```
 
+In long format, a symlink keeps `->` and the target gets the suffix, for example `link -> target*`.
+
 ---
 
 ## ❌ Error Handling
