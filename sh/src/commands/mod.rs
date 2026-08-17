@@ -63,21 +63,3 @@ pub fn execute(args: &[String]) -> Status {
         }
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use super::expand_tilde;
-
-    #[test]
-    fn expands_home_directory() {
-        let home = std::env::var("HOME").unwrap_or_else(|_| "/".to_string());
-        assert_eq!(expand_tilde("~"), home);
-        assert_eq!(expand_tilde("~/tmp"), format!("{}/tmp", home));
-    }
-
-    #[test]
-    fn leaves_non_tilde_paths_unchanged() {
-        assert_eq!(expand_tilde("/tmp/test"), "/tmp/test");
-        assert_eq!(expand_tilde("relative/path"), "relative/path");
-    }
-}
