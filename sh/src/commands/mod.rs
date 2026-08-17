@@ -9,6 +9,24 @@ pub mod mv;
 pub mod pwd;
 pub mod rm;
 use std::env;
+use std::path::PathBuf;
+use std::sync::{Mutex, OnceLock};
+
+static PREVIOUS_DIR: OnceLock<Mutex<Option<PathBuf>>> = OnceLock::new();
+
+pub(crate) fn previous_dir() -> &'static Mutex<Option<PathBuf>> {
+    PREVIOUS_DIR.get_or_init(|| Mutex::new(None))
+}
+
+pub(crate) fn set_previous_dir(path: PathBuf) {
+    if let Ok(mut previous) = previous_dir().lock() {
+        *previous = Some(path);
+    }
+}
+
+pub(crate) fn take_previous_dir() -> Option<PathBuf> {
+    previous_dir().lock().ok().and_then(|previous| previous.clone())
+}
 
 pub fn expand_tilde(path: &str) -> String {
     if path == "~" ||  path == "$HOME"  {
