@@ -1,4 +1,4 @@
-use crate::commands::Status;
+use crate::commands::{expand_tilde, Status};
 use std::fs::File;
 use std::io::{self, Read, Write , BufRead};
 use std::path::Path;
@@ -47,27 +47,29 @@ pub fn run(args: &[String]) -> Result<Status, String> {
             continue;
         }
 
+        let expanded_path = expand_tilde(path);
+
         // Attempt to open the specified file path
-        match File::open(Path::new(path)) {
+        match File::open(Path::new(&expanded_path)) {
             Ok(mut file) => {
                 let mut buf = Vec::new();
 
                 // Read the entire file into a memory buffer
                 if let Err(e) = file.read_to_end(&mut buf) {
-                    eprintln!("cat: {}: {}", path, e);
+                    eprintln!("cat: {}: {}", expanded_path, e);
                     had_error = true;
                     continue;
                 }
 
                 // Write the buffer contents to locked stdout
                 if let Err(e) = out.write_all(&buf) {
-                    eprintln!("cat: {}: {}", path, e);
+                    eprintln!("cat: {}: {}", expanded_path, e);
                     had_error = true;
                 }
             }
             Err(e) => {
                 // Handle file opening errors (e.g., File Not Found, Permission Denied)
-                eprintln!("cat: {}: {}", path, e);
+                eprintln!("cat: {}: {}", expanded_path, e);
                 had_error = true;
             }
         }

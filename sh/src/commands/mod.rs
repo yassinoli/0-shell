@@ -8,6 +8,21 @@ pub mod mkdir;
 pub mod mv;
 pub mod pwd;
 pub mod rm;
+use std::env;
+
+pub fn expand_tilde(path: &str) -> String {
+    if path == "~" {
+        return env::var("HOME").unwrap_or_else(|_| "/".to_string());
+    }
+
+    if let Some(rest) = path.strip_prefix("~/") {
+        let home = env::var("HOME").unwrap_or_else(|_| "/".to_string());
+        return format!("{}/{}", home, rest);
+    }
+
+    path.to_string()
+}
+
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Status {
@@ -46,5 +61,23 @@ pub fn execute(args: &[String]) -> Status {
             eprintln!("{}", e);
             Status::Continue
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::expand_tilde;
+
+    #[test]
+    fn expands_home_directory() {
+        let home = std::env::var("HOME").unwrap_or_else(|_| "/".to_string());
+        assert_eq!(expand_tilde("~"), home);
+        assert_eq!(expand_tilde("~/tmp"), format!("{}/tmp", home));
+    }
+
+    #[test]
+    fn leaves_non_tilde_paths_unchanged() {
+        assert_eq!(expand_tilde("/tmp/test"), "/tmp/test");
+        assert_eq!(expand_tilde("relative/path"), "relative/path");
     }
 }

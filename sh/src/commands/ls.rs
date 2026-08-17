@@ -1,4 +1,4 @@
-use crate::commands::Status;
+use crate::commands::{expand_tilde, Status};
 use std::collections::HashMap;
 use std::fs::{self, Metadata};
 use std::io::{self, Write};
@@ -49,7 +49,8 @@ pub fn run(args: &[String]) -> Result<Status, String> {
     let mut dirs: Vec<PathBuf> = Vec::new();
     
     for p in &paths {
-        let path = Path::new(p);
+        let expanded = expand_tilde(p);
+        let path = Path::new(&expanded);
         // Fetch metadata without following symlinks
         match fs::symlink_metadata(path) {
             Ok(meta) => {
@@ -62,7 +63,7 @@ pub fn run(args: &[String]) -> Result<Status, String> {
             }
             Err(e) => {
             // Print access error to stderr and flag exit failure
-                eprintln!("ls: cannot access '{}': {}", p, e);
+                eprintln!("ls: cannot access '{}': {}", expanded, e);
                 had_error = true;
             }
         }

@@ -1,4 +1,4 @@
-use crate::commands::Status;
+use crate::commands::{expand_tilde, Status};
 use std::fs;
 use std::io::ErrorKind;
 use std::path::{Path, PathBuf};
@@ -8,7 +8,8 @@ pub fn run(args: &[String]) -> Result<Status, String> {
         return Err("mv: missing file operand".to_string());
     }
 
-    let dest = Path::new(args.last().unwrap());
+    let dest_str = expand_tilde(args.last().unwrap());
+    let dest = Path::new(&dest_str);
     let sources = &args[..args.len() - 1];
 
     let dest_is_dir = dest.is_dir();
@@ -21,12 +22,13 @@ pub fn run(args: &[String]) -> Result<Status, String> {
     }
 
     for src in sources {
-        let src_path = Path::new(src);
+        let expanded_src = expand_tilde(src);
+        let src_path = Path::new(&expanded_src);
         let target: PathBuf = if dest_is_dir {
             match src_path.file_name() {
                 Some(name) => dest.join(name),
                 None => {
-                    eprintln!("mv: cannot move '{}': Invalid path", src);
+                    eprintln!("mv: cannot move '{}': Invalid path", expanded_src);
                     continue;
                 }
             }
@@ -35,7 +37,7 @@ pub fn run(args: &[String]) -> Result<Status, String> {
         };
 
         if let Err(e) = move_path(src_path, &target) {
-            eprintln!("mv: cannot move '{}' to '{}': {}", src, target.display(), e);
+            eprintln!("mv: cannot move '{}' to '{}': {}", expanded_src, target.display(), e);
         }
     }
 

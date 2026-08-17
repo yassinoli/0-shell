@@ -1,4 +1,4 @@
-use crate::commands::Status;
+use crate::commands::{expand_tilde, Status};
 use std::fs;
 use std::path::Path;
 
@@ -8,8 +8,9 @@ pub fn run(args: &[String]) -> Result<Status, String> {
     }
 
     for path in args {
-        if let Err(e) = fs::create_dir(Path::new(path)) {
-            eprintln!("mkdir: cannot create directory '{}': {}", path, e);
+        let expanded = expand_tilde(path);
+        if let Err(e) = fs::create_dir(Path::new(&expanded)) {
+            eprintln!("mkdir: cannot create directory '{}': {}", expanded, e);
         }
     }
     Ok(Status::Continue)

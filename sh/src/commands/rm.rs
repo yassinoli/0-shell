@@ -1,4 +1,4 @@
-use crate::commands::Status;
+use crate::commands::{expand_tilde, Status};
 use std::fs;
 use std::path::Path;
 
@@ -35,25 +35,26 @@ pub fn run(args: &[String]) -> Result<Status, String> {
     }
 
     for path in paths {
-        let p = Path::new(path);
+        let expanded = expand_tilde(path);
+        let p = Path::new(&expanded);
         let meta = match fs::symlink_metadata(p) {
             Ok(m) => m,
             Err(e) => {
-                eprintln!("rm: cannot remove '{}': {}", path, e);
+                eprintln!("rm: cannot remove '{}': {}", expanded, e);
                 continue;
             }
         };
 
         if meta.is_dir() && !meta.file_type().is_symlink() {
             if !recursive {
-                eprintln!("rm: cannot remove '{}': Is a directory", path);
+                eprintln!("rm: cannot remove '{}': Is a directory", expanded);
                 continue;
             }
             if let Err(e) = fs::remove_dir_all(p) {
-                eprintln!("rm: cannot remove '{}': {}", path, e);
+                eprintln!("rm: cannot remove '{}': {}", expanded, e);
             }
         } else if let Err(e) = fs::remove_file(p) {
-            eprintln!("rm: cannot remove '{}': {}", path, e);
+            eprintln!("rm: cannot remove '{}': {}", expanded, e);
         }
     }
 

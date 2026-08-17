@@ -1,4 +1,4 @@
-use crate::commands::Status;
+use crate::commands::{expand_tilde, Status};
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -7,7 +7,8 @@ pub fn run(args: &[String]) -> Result<Status, String> {
         return Err("cp: missing file operand".to_string());
     }
 
-    let dest = Path::new(args.last().unwrap());
+    let dest_str = expand_tilde(args.last().unwrap());
+    let dest = Path::new(&dest_str);
     let sources = &args[..args.len() - 1];
 
     let dest_is_dir = dest.is_dir();
@@ -20,9 +21,10 @@ pub fn run(args: &[String]) -> Result<Status, String> {
     }
 
     for src in sources {
-        let src_path = Path::new(src);
+        let expanded_src = expand_tilde(src);
+        let src_path = Path::new(&expanded_src);
         if src_path.is_dir() {
-            eprintln!("cp: -r not specified; omitting directory '{}'", src);
+            eprintln!("cp: -r not specified; omitting directory '{}'", expanded_src);
             continue;
         }
 
@@ -30,7 +32,7 @@ pub fn run(args: &[String]) -> Result<Status, String> {
             match src_path.file_name() {
                 Some(name) => dest.join(name),
                 None => {
-                    eprintln!("cp: cannot copy '{}': Invalid path", src);
+                    eprintln!("cp: cannot copy '{}': Invalid path", expanded_src);
                     continue;
                 }
             }
@@ -39,7 +41,7 @@ pub fn run(args: &[String]) -> Result<Status, String> {
         };
 
         if let Err(e) = fs::copy(src_path, &target) {
-            eprintln!("cp: cannot copy '{}' to '{}': {}", src, target.display(), e);
+            eprintln!("cp: cannot copy '{}' to '{}': {}", expanded_src, target.display(), e);
         }
     }
 
