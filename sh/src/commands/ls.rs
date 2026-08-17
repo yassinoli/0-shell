@@ -158,8 +158,12 @@ fn list_named_entries(names: &[String], paths: &[PathBuf], flags: &Flags) -> io:
 
 fn print_short(names: &[String], paths: &[PathBuf], flags: &Flags) -> io::Result<()> {
     let stdout = io::stdout();
+      // Lock stdout so we can write to it safely and efficiently
     let mut out = stdout.lock();
+     // Go through every file/directory name
     for (i, name) in names.iter().enumerate() {
+         // If -F is used, add a symbol to the name:
+        // / for directory, * for executable, @ for symlink, ........
         let display = if flags.classify {
             classify_name(name, &paths[i])
         } else {
@@ -171,13 +175,16 @@ fn print_short(names: &[String], paths: &[PathBuf], flags: &Flags) -> io::Result
 }
 
 fn print_long(names: &[String], paths: &[PathBuf], flags: &Flags) -> io::Result<()> {
+     // Store metadata for each file/directory.
     let mut metas: Vec<Option<Metadata>> = Vec::with_capacity(paths.len());
+    // Count the total number of filesystem blocks.
     let mut total_blocks: u64 = 0;
 
     for path in paths {
+         // symlink_metadata() does NOT follow symbolic links.
         match fs::symlink_metadata(path) {
             Ok(m) => {
-                // st_blocks is in 512-byte units on Linux
+                // Add the number of filesystem blocks used by this file
                 total_blocks += m.blocks();
                 metas.push(Some(m));
             }
@@ -186,20 +193,26 @@ fn print_long(names: &[String], paths: &[PathBuf], flags: &Flags) -> io::Result<
     }
 
     println!("total {}", total_blocks);
-
+    // align the output.
     let mut link_w = 1usize;
     let mut user_w = 1usize;
     let mut group_w = 1usize;
     let mut size_w = 1usize;
 
+    // Store the information that will be printed for each file
     let mut rows: Vec<Option<LongRow>> = Vec::with_capacity(paths.len());
 
+    // Build one LongRow for each path
     for (i, path) in paths.iter().enumerate() {
         let Some(ref meta) = metas[i] else {
             rows.push(None);
             continue;
         };
+         // Convert metadata into information needed by "ls -l"
+        // such as permissions, owner, group, size, date, and name.
         let row = build_long_row(&names[i], path, meta, flags);
+
+        // Find the largest width of each column.
         link_w = link_w.max(row.nlink_str.len());
         user_w = user_w.max(row.user.len());
         group_w = group_w.max(row.group.len());
@@ -214,13 +227,13 @@ fn print_long(names: &[String], paths: &[PathBuf], flags: &Flags) -> io::Result<
         writeln!(
             out,
             "{} {:>link_w$} {:user_w$} {:group_w$} {:>size_w$} {} {}",
-            row.mode,
-            row.nlink_str,
-            row.user,
-            row.group,
-            row.size_str,
-            row.mtime,
-            row.name,
+            row.mode,      // Permissions: -rwxr-xr-x...
+            row.nlink_str, // Number of hard links
+            row.user,      // Owner
+            row.group,     // Group
+            row.size_str,  // File size
+            row.mtime,     // Modification time
+            row.name,      // File name
             link_w = link_w,
             user_w = user_w,
             group_w = group_w,
@@ -242,28 +255,34 @@ struct LongRow {
 }
 
 fn build_long_row(name: &str, path: &Path, meta: &Metadata, flags: &Flags) -> LongRow {
-    let mode = format_mode(meta);
-    let nlink_str = meta.nlink().to_string();
-    let user = resolve_user(meta.uid());
-    let group = resolve_group(meta.gid());
-    let size_str = format_size(meta);
-    let mtime = format_mtime(meta);
-    let display_name = if flags.classify {
+    let mode = format_mode(meta);               // Get the file type and permissions.
+    let nlink_str = meta.nlink().to_string();   // Get the number of hard links.
+    let user = resolve_user(meta.uid());        // Convert the user ID (UID) into a username.
+    let group = resolve_group(meta.gid());      // Convert the group ID (GID) into a group name.
+    let size_str = format_size(meta);           // Get the file size. - For normal files: size in bytes. -For devices: major, minor numbers.
+    let mtime = format_mtime(meta);             // Get the modification date/time.
+
+    // Prepare the name that will be displayed.
+    // If -F is enabled, add a special character -  directory -> / executable -> * /  symlink -> @
+    let display_name = if flags.classify {   
         classify_name(name, path)
     } else {
         name.to_string()
     };
 
-    // Symlink target
+     // show where the link points.
     let name = if meta.file_type().is_symlink() {
         match fs::read_link(path) {
+              // trim_end_matches('@') removes the '@' added by -F
             Ok(target) => format!("{} -> {}", display_name.trim_end_matches('@'), target.display()),
             Err(_) => display_name,
         }
     } else {
+        // Normal file/directory
         display_name
     };
 
+    // Put all the collected information into one LongRow.
     LongRow {
         mode,
         nlink_str,
@@ -277,46 +296,68 @@ fn build_long_row(name: &str, path: &Path, meta: &Metadata, flags: &Flags) -> Lo
 
 fn format_mode(meta: &Metadata) -> String {
     let ft = meta.file_type();
+    // 1 for file type 9  for permissions
     let mut s = String::with_capacity(10);
-
+    // 1 for file type
     s.push(if ft.is_dir() {
-        'd'
+        'd' //directory
     } else if ft.is_symlink() {
-        'l'
+        'l' //symbolic link
     } else if ft.is_char_device() {
-        'c'
+        'c' //character device
     } else if ft.is_block_device() {
-        'b'
+        'b' //block device
     } else if ft.is_fifo() {
-        'p'
+        'p' // FIFO  
     } else if ft.is_socket() {
-        's'
+        's' //Unix socket
     } else {
-        '-'
+        '-' //regular file
     });
 
     let mode = meta.permissions().mode();
+    // Owner permissions  - 0o400 = owner can read
     s.push(if mode & 0o400 != 0 { 'r' } else { '-' });
+
+    // 0o200 = owner can write
     s.push(if mode & 0o200 != 0 { 'w' } else { '-' });
+
+    // 0o100 = owner can execute - 0o4000 = setuid
+    // special_exec() handles normal execute + setuid.
     s.push(special_exec(mode, 0o100, 0o4000, 's', 'S'));
+
+    // Group permissions - 0o040 = group can read
     s.push(if mode & 0o040 != 0 { 'r' } else { '-' });
+
+    // 0o020 = group can write
     s.push(if mode & 0o020 != 0 { 'w' } else { '-' });
+
+    // 0o010 = group can execute - 0o2000 = setgid
     s.push(special_exec(mode, 0o010, 0o2000, 's', 'S'));
+
+    // Others permissions -  0o004 = others can read
     s.push(if mode & 0o004 != 0 { 'r' } else { '-' });
+
+    // 0o002 = others can write
     s.push(if mode & 0o002 != 0 { 'w' } else { '-' });
+
+    // 0o001 = others can execute - 0o1000 = sticky bit
     s.push(special_exec(mode, 0o001, 0o1000, 't', 'T'));
 
     s
 }
 
 fn special_exec(mode: u32, exec_bit: u32, special_bit: u32, lower: char, upper: char) -> char {
+    // Check if the execute permission is enabled.
     let exec = mode & exec_bit != 0;
+    // Check if the special permission is enabled.
     let special = mode & special_bit != 0;
+     // Decide which character to display.
     match (exec, special) {
-        (true, true) => lower,
-        (false, true) => upper,
-        (true, false) => 'x',
-        (false, false) => '-',
+        (true, true) => lower,  // Execute + special permissio 
+        (false, true) => upper, // Special permission exists, but execute is disabled.
+        (true, false) => 'x', // Execute permission only
+        (false, false) => '-', // Neither execute nor special permission
     }
 }
 
@@ -360,7 +401,7 @@ fn format_mtime(meta: &Metadata) -> String {
     }
 }
 
-/// Convert Unix timestamp to calendar date (UTC). Good enough for ls display.
+/// Convert Unix timestamp to calendar date (UTC)
 fn civil_from_days(timestamp: i64) -> (u32, u32, u32, i32, i32, i32) {
     let days = timestamp.div_euclid(86400);
     let tod = timestamp.rem_euclid(86400) as u32;
@@ -368,7 +409,6 @@ fn civil_from_days(timestamp: i64) -> (u32, u32, u32, i32, i32, i32) {
     let min = (tod % 3600) / 60;
     let sec = tod % 60;
 
-    // Algorithm from http://howardhinnant.github.io/date_algorithms.html
     let z = days + 719468;
     let era = if z >= 0 { z } else { z - 146096 } / 146097;
     let doe = (z - era * 146097) as u64;
@@ -404,6 +444,7 @@ fn classify_name(name: &str, path: &Path) -> String {
     }
 }
 
+// 
 fn resolve_user(uid: u32) -> String {
     users().get(&uid).cloned().unwrap_or_else(|| uid.to_string())
 }
@@ -411,7 +452,7 @@ fn resolve_user(uid: u32) -> String {
 fn resolve_group(gid: u32) -> String {
     groups().get(&gid).cloned().unwrap_or_else(|| gid.to_string())
 }
-
+// onelock : A synchronization primitive which can nominally be written to only once.
 fn users() -> &'static HashMap<u32, String> {
     static USERS: OnceLock<HashMap<u32, String>> = OnceLock::new();
     USERS.get_or_init(|| parse_id_file("/etc/passwd", 0, 2))
@@ -422,6 +463,8 @@ fn groups() -> &'static HashMap<u32, String> {
     GROUPS.get_or_init(|| parse_id_file("/etc/group", 0, 2))
 }
 
+
+// Read an ID file such as /etc/passwd or /etc/group and create a map from ID to name.
 fn parse_id_file(path: &str, name_idx: usize, id_idx: usize) -> HashMap<u32, String> {
     let mut map = HashMap::new();
     let Ok(content) = fs::read_to_string(path) else {
