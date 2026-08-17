@@ -18,11 +18,13 @@ pub fn run(args: &[String]) -> Result<Status, String> {
     let mut flags = Flags::default();
     let mut paths: Vec<&str> = Vec::new();
 
+    let mut skipp = false ;
     for arg in args {
         if arg == "--" {
+            skipp = true;
             continue;
         }
-        if arg.starts_with('-') && arg.len() > 1 && arg != "-" {
+        if arg.starts_with('-') && arg.len() > 1 && arg != "-" && skipp == false {
             for c in arg.chars().skip(1) {
                 match c {
                     'l' => flags.long = true,
