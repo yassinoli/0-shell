@@ -25,8 +25,7 @@ pub fn run(args: &[String]) -> Result<Status, String> {
                 }
             }
         }
-        // sssssssssssssssss
-          return Err("cat: missing operand".to_string());
+          return Ok(Status::Continue);
     }
 
     // Lock standard output once to optimize writing performance across multiple files/streams
