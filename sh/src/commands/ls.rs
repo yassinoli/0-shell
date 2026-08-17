@@ -159,6 +159,21 @@ fn list_named_entries(names: &[String], paths: &[PathBuf], flags: &Flags) -> io:
     Ok(())
 }
 
+fn display_name(name: &str) -> String {
+    let mut result = String::new();
+
+    for c in name.chars() {
+        match c {
+            '\n' => result.push_str("'$'\\n''"),
+            '\t' => result.push_str("'$'\\t''"),
+            '\r' => result.push_str("'$'\\r''"),
+            '\\' => result.push_str("\\\\"),
+            _ => result.push(c),
+        }
+    }
+
+    result
+}
 fn print_short(names: &[String], paths: &[PathBuf], flags: &Flags) -> io::Result<()> {
     let stdout = io::stdout();
       // Lock stdout so we can write to it safely and efficiently
@@ -172,6 +187,7 @@ fn print_short(names: &[String], paths: &[PathBuf], flags: &Flags) -> io::Result
         } else {
             name.clone()
         };
+         let display = display_name(&display);
         writeln!(out, "{}", display)?;
     }
     Ok(())
