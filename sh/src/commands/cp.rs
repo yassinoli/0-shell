@@ -24,7 +24,7 @@ pub fn run(args: &[String]) -> Result<Status, String> {
         let expanded_src = expand_tilde(src);
         let src_path = Path::new(&expanded_src);
         if src_path.is_dir() {
-            eprintln!("cp: -r not specified; omitting directory '{}'", expanded_src);
+            eprintln!("can not copy directory '{}'", expanded_src);
             continue;
         }
 
