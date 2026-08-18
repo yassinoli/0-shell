@@ -1,4 +1,3 @@
-/// Simple shell tokenizer supporting single and double quotes.
 pub enum TokenizeState {
     Complete(Vec<String>),
     Incomplete,
@@ -16,14 +15,21 @@ pub fn tokenize(input: &str) -> TokenizeState {
             '\'' if !in_double => {
                 in_single = !in_single;
             }
+
             '"' if !in_single => {
                 in_double = !in_double;
             }
+
+            '#' if !in_single && !in_double => {
+                break;
+            }
+
             c if c.is_whitespace() && !in_single && !in_double => {
                 if !current.is_empty() {
                     tokens.push(std::mem::take(&mut current));
                 }
             }
+
             '\\' if !in_single => {
                 if let Some(next) = chars.next() {
                     current.push(next);
@@ -31,7 +37,10 @@ pub fn tokenize(input: &str) -> TokenizeState {
                     current.push('\\');
                 }
             }
-            _ => current.push(c),
+
+            _ => {
+                current.push(c);
+            }
         }
     }
 
