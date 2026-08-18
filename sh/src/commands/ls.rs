@@ -132,11 +132,11 @@ fn list_directory(dir: &Path, flags: &Flags) -> io::Result<()> {
     let paths: Vec<PathBuf> = entries.iter().map(|(_, p)| p.clone()).collect();
     let names: Vec<String> = entries.iter().map(|(n, _)| n.clone()).collect();
 
-    list_named_entries(&names, &paths, flags)
+    list_named_entries(&names, &paths, flags,true)
 }
 
 // Prepare explicit file paths for output
-fn list_entries(paths: &[PathBuf], flags: &Flags, _is_dir: bool) -> io::Result<()> {
+fn list_entries(paths: &[PathBuf], flags: &Flags, is_dir: bool) -> io::Result<()> {
     // Extract display names from file paths
     let names: Vec<String> = paths
         .iter()
@@ -146,13 +146,13 @@ fn list_entries(paths: &[PathBuf], flags: &Flags, _is_dir: bool) -> io::Result<(
                 .unwrap_or_else(|| p.display().to_string())
         })
         .collect();
-    list_named_entries(&names, paths, flags)
+    list_named_entries(&names, paths, flags,is_dir)
 }
 
 // Print entries using either detailed (-l) or standard layout
-fn list_named_entries(names: &[String], paths: &[PathBuf], flags: &Flags) -> io::Result<()> {
+fn list_named_entries(names: &[String], paths: &[PathBuf], flags: &Flags, is_dir: bool) -> io::Result<()> {
     if flags.long {
-        print_long(names, paths, flags)?;
+        print_long(names, paths, flags , is_dir)?;
     } else {
         print_short(names, paths, flags)?;
     }
@@ -193,7 +193,7 @@ fn print_short(names: &[String], paths: &[PathBuf], flags: &Flags) -> io::Result
     Ok(())
 }
 
-fn print_long(names: &[String], paths: &[PathBuf], flags: &Flags) -> io::Result<()> {
+fn print_long(names: &[String], paths: &[PathBuf], flags: &Flags , is_dir:bool) -> io::Result<()> {
      // Store metadata for each file/directory.
     let mut metas: Vec<Option<Metadata>> = Vec::with_capacity(paths.len());
     // Count the total number of filesystem blocks.
@@ -210,8 +210,10 @@ fn print_long(names: &[String], paths: &[PathBuf], flags: &Flags) -> io::Result<
             Err(_) => metas.push(None),
         }
     }
-
-    println!("total {}", total_blocks/2);
+    if is_dir{
+       println!("total {}", total_blocks/2);
+    }
+    
     // align the output.
     let mut link_w = 1usize;
     let mut user_w = 1usize;

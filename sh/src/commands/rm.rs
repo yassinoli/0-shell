@@ -38,6 +38,12 @@ pub fn run(args: &[String]) -> Result<Status, String> {
     }
 
     for path in paths {
+
+        if path.ends_with(".") || path.ends_with("..") || path.ends_with("/.") || path.ends_with("/..") || path.ends_with("./") || path == "/" {
+            eprintln!("can't remove ");
+            continue;
+        }
+
         let expanded = expand_tilde(path);
         let p = Path::new(&expanded);
 
