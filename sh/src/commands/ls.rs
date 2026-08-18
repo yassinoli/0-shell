@@ -211,7 +211,7 @@ fn print_long(names: &[String], paths: &[PathBuf], flags: &Flags) -> io::Result<
         }
     }
 
-    println!("total {}", total_blocks);
+    println!("total {}", total_blocks*2);
     // align the output.
     let mut link_w = 1usize;
     let mut user_w = 1usize;
