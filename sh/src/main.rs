@@ -28,6 +28,13 @@ fn main() {
                 }
 
                 buffer.push_str(&line);
+                
+                    if buffer.ends_with("\\\n") {
+                        buffer.pop();
+                        buffer.pop();
+
+                        continue;
+                    }
 
                 match tokenize(&buffer) {
                     TokenizeState::Incomplete => continue,
